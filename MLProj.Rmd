@@ -1,0 +1,134 @@
+---
+title: "MLearnProj"
+author: "Haarkin898"
+date: "1/18/2021"
+output:
+  html_document:
+    keep_md: yes
+    self_contained: yes
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Project Introduction
+
+This project looks at how fitness data about personal activitity collected from electronic devices can be analyzed using Machine learning techniques. Datasets wete obtained from a group of enthusiasts who take regular records of their activities for varying reasons. While most people regularly measure how much of a specific activity they do, how well these activities are carried are barely measured. The aim of this project is to distinguish between correctly done exercises and theie incorrect versions using data from http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). There are six participants and five activities to be tested. Original dataset is divided into train and test data. The aim is to create a model that predicts the manner in which the ecercise or activities are carried out using the "classe" variable in the train set.
+
+
+```{r initialization, echo=TRUE, message=FALSE}
+## load the appropriate libraries and set seed 
+library(caret)
+library(rpart);library(rpart.plot)
+library(RColorBrewer)
+library(rattle)
+library(e1071)
+library(randomForest)
+library(corrplot)
+set.seed(123)
+```
+
+## Download data
+
+the code below downloads the data and assign them into r objects which are then explored. Both data have 160 variables however the train data has 19622 observations while the test data is limited to 20 observations.
+```{r exploreData,  echo=TRUE, results='hide'}
+trainUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+trainData <- "./MLProj/trainData.csv"
+testData <- "./MLProj/testData.csv"
+
+if (!file.exists("./MLProj")) {
+  dir.create("./MLProj")
+}
+if (!file.exists(trainData)) {
+  download.file(trainUrl, destfile=trainData, method="curl")
+}
+if (!file.exists(testData)) {
+  download.file(testUrl, destfile=testData, method="curl")
+}
+##download.file(trainUrl, destfile = "./trainData.csv", method = "curl")
+##download.file(testUrl, destfile = "./testData.csv", method = "curl")
+
+## load raw data
+
+trainData <- read.csv("./MLProj/trainData.csv", na.strings = c("NA", "#DIV/0!", "")) ## identify NAs within datasets
+testData <- read.csv("./MLProj/testData.csv", na.strings = c("NA", "#DIV/0!", ""))   ## identify NAs within datasets
+
+## explore loaded data
+head(trainData,3)
+head(testData,3)
+
+```
+
+## Data Cleaning
+Irrelevant variables are removed and columns with NAs as well. Also column with near zero variations were checked for however there are none in the dataset. The refined datasets have 53 variables.
+```{r cleanData}
+##remove irrelevant columns
+trainDataRef <- trainData[, 8:length(trainData)]
+testdataRef <- testData[, 8:length(testData)]
+
+##remove columns with NAs
+trainDataRef <- trainDataRef[colSums(is.na(trainDataRef)) == 0]
+testdataRef <- testdataRef[colSums(is.na(testdataRef)) == 0]
+
+## identify records with near zero variance and remove them
+NZV <- nearZeroVar(trainDataRef, saveMetrics = TRUE)
+trainDataRef <- trainDataRef[,NZV$nzv==FALSE]
+```
+
+## (Train)Data Partition
+the train data set is partitioned into a train set and a validation set
+```{r trainDataPartition}
+## Train data partition necessary for cross validation
+set.seed(1234)
+in.training <- createDataPartition(trainDataRef$classe, p = 0.70, list = F)
+trainData1 <- trainDataRef[in.training,]
+validationData <- trainDataRef[-in.training,]
+
+```
+
+## Initialized Exploration Plots
+```{r initialExploration, echo=FALSE}
+## Decision Tree and correlation plot for further exploration
+Tree <- rpart(classe ~ ., data = trainData1, method = "class")
+rpart.plot(Tree, main = "Distribution Tree", extra = 102)
+corrplot(cor(trainData1[, -length(trainData1)]), method = "color", tl.cex = 0.5)
+```
+
+## Modeling of the Train Data
+A predictive model using the random forrest algorithm for activity recognition is used to model the data. A 5 fold cross validation scheme is utilized in the process.
+```{r modelCreation}
+##Model generation
+rfModel <- train(classe ~ ., data = trainData1, method = "rf", trControl = trainControl(method = "cv", 5), ntree = 250)
+rfModel
+```
+
+```{r modelPerfomance}
+##test model with validation dataset
+rfPredict <- predict(rfModel, validationData)
+confusionMatrix(table(validationData$classe, rfPredict))
+```
+
+```{r modelaccuracy}
+modelAccuracy <- as.numeric(confusionMatrix(table(validationData$classe, rfPredict))$overall[1])
+modelAccuracy
+OSE <- 1 - modelAccuracy
+OSE
+##OSE1 <- 1 - as.numeric(confusionMatrix(table(validationData$classe, rfPredict))$overall[1])
+
+```
+The estimated accuracy of the model is `r modelAccuracy` and the estimated out of sample error is `r OSE`.
+
+## Test Data Prediction
+
+The model is now applied to the test data however the last variable in the dataset is excluded from the analysis.
+```{r Results}
+##Results
+testResults <- predict(rfModel, testdataRef[, -length(testdataRef)])
+testResults
+```
+
+
